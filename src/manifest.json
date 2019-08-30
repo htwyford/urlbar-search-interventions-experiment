@@ -1,0 +1,29 @@
+{
+  "manifest_version": 2,
+  "name": "Example Add-on Experiment",
+  "version": "1.0.0",
+  "description": "An example extension for an add-on experiment.",
+  "applications": {
+    "gecko": {
+      "id": "urlbar-top-sites-experiment@shield.mozilla.org",
+      "strict_min_version": "69.0b13"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "urlbar-top-sites-experiment@shield.mozilla.org",
+      "strict_min_version": "69.0b13"
+    }
+  },
+  "permissions": [
+    "normandyAddonStudy",
+    "urlbar"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "incognito": "spanning",
+  "hidden": true
+}
