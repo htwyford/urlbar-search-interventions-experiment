@@ -1,7 +1,7 @@
 {
-  "name": "example-addon-experiment",
+  "name": "urlbar-search-interventions-experiment",
   "version": "1.0.0",
-  "description": "An example extension for an add-on experiment.",
+  "description": "Shows relevant tips in the urlbar view when you type certain search terms.",
   "private": true,
   "license": "MPLv2",
   "webExt": {
