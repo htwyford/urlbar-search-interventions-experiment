@@ -21,6 +21,7 @@
   ],
   "background": {
     "scripts": [
+      "QueryScorer.js",
       "background.js"
     ]
   },
