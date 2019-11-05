@@ -25,7 +25,7 @@ Use [web-ext] to build the add-on zip file.
 
 ## Testing
 
-The tests directory contains a browser chrome mochitest and a head.js. The
+The tests directory contains browser chrome mochitests and a head.js. The
 head.js implements a simple framework for testing Normandy experiment add-on
 files.
 
@@ -34,10 +34,10 @@ need either a Mozilla-signed version of the add-on; or Firefox Nightly,
 Developer Edition, or any other Firefox build that gives privileges to
 temporarily installed add-ons.
 
-To run the test in a particular version of Firefox, you'll need to clone the
-repo from which your Firefox was built. If you're testing in Nightly, you'll
-need [mozilla-central]. If you're testing in Developer Edition or Beta, you'll
-need [mozilla-beta].
+To run a test in a particular version of Firefox, you'll need to clone the repo
+from which your Firefox was built. If you're testing in Nightly, you'll need
+[mozilla-central]. If you're testing in Developer Edition or Beta, you'll need
+[mozilla-beta].
 
 Then:
 
@@ -53,14 +53,13 @@ Then:
 
    Or use a signed copy of the zip file.
 
-4. Copy the zip file into srcdir/testing/extensions/tests/browser:
+4. Copy the zip file into srcdir/testing/extensions/tests:
 
-       $ cp web-ext-artifacts/urlbar_search_interventions_experiment-1.0.0.zip srcdir/testing/extensions/tests/browser
+       $ cp web-ext-artifacts/urlbar_search_interventions_experiment-1.0.0.zip srcdir/testing/extensions/tests
 
-5. Update `EXPECTED_ADDON_SIGNED_STATE` as necessary in
-   srcdir/testing/extensions/tests/browser/browser_test.js.  If your zip file is
-   unsigned, its value should be `AddonManager.SIGNEDSTATE_MISSING`. If it's
-   signed, it should be `AddonManager.SIGNEDSTATE_PRIVILEGED`.
+5. Update `EXPECTED_ADDON_SIGNED_STATE` as necessary in the test files. If your
+   zip file is unsigned, its value should be `AddonManager.SIGNEDSTATE_MISSING`.
+   If it's signed, it should be `AddonManager.SIGNEDSTATE_PRIVILEGED`.
 
 6. `cd` into your srcdir.
 7. Run the test using mach:
