@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 /**
@@ -71,9 +75,10 @@ class QueryScorer {
     // Then for each document, convert its raw distance to a mean by dividing by
     // the number of words in the query string.
 
-    let searchWords = searchString.trim().split(/\s+/).map(word =>
-      word.toLocaleLowerCase()
-    );
+    let searchWords = searchString
+      .trim()
+      .split(/\s+/)
+      .map(word => word.toLocaleLowerCase());
     let sumByDoc = new Map();
     for (let searchWord of searchWords) {
       let minDistanceByDoc = new Map();

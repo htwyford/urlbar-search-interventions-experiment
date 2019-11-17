@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* import-globals-from ../../../src/QueryScorer.js */
+
 "use strict";
 
 // The path of the add-on file relative to `getTestFilePath`.
@@ -142,9 +144,10 @@ add_task(async function test() {
 
     for (let { query, matches } of tests) {
       info(`Checking query: ${query}\n`);
-      let actual = qs.score(query).filter(result =>
-        result.score <= CUTOFF_SCORE
-      ).map(result => result.document.id);
+      let actual = qs
+        .score(query)
+        .filter(result => result.score <= CUTOFF_SCORE)
+        .map(result => result.document.id);
       Assert.deepEqual(actual, matches);
     }
   });

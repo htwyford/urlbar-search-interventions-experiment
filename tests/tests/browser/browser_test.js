@@ -166,7 +166,7 @@ add_task(async function telemetryTreatment() {
   await withStudy({ branch: TREATMENT_BRANCH }, async () => {
     await withAddon(async () => {
       //XXX Do whatever triggers the telemetry in your case.  Then for example:
-/*
+      /*
       TelemetryTestUtils.assertEvents([
         {
           category: "urlbar",
@@ -181,7 +181,7 @@ add_task(async function telemetryTreatment() {
           },
         },
       ]);
-*/
+      */
     });
   });
 });
@@ -193,7 +193,7 @@ add_task(async function telemetryControl() {
   await withStudy({ branch: CONTROL_BRANCH }, async () => {
     await withAddon(async () => {
       //XXX Do whatever triggers the telemetry in your case.  Then for example:
-/*
+      /*
       // This is actually the same telemetry that should have been recorded on
       // the treatment branch.  (See the treatment-branch test above.)  We will
       // be able to distinguish between treatment and control telemetry in the
@@ -212,7 +212,7 @@ add_task(async function telemetryControl() {
           },
         },
       ]);
-*/
+      */
     });
   });
 });
