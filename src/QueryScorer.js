@@ -13,24 +13,35 @@
  *
  * The scoring method is simple and is based on Levenshtein edit distance.
  * Therefore, lower scores indicate a better match than higher scores.  In
- * summary, we compute the mean edit distance between the query words and the
- * words in each document that best match the query words.  This mean edit
- * distance is the document's score.
+ * summary, we compute the edit distances between the query words and the words
+ * in each document that best match them.  If any of these distances is larger
+ * than some threshold -- defined by `distanceThreshold` -- then the document
+ * does not match the query, and we assign it a score of Infinity.  The score
+ * for a document is the sum of these distances.
  *
  * For example, if the query is a single word, then the distance between it and
  * a given document is the minimum distance between it and all words in the
  * document.  If the document contains the word exactly, then the distance is
  * zero.  If the query is two words, then the distance between it and the
  * document is the sum of the minimum distances between each query word and all
- * words in the document, divided by two.  For details, see `score`.
+ * words in the document.  For details, see `score`.
  *
  * As mentioned, `score` returns a sorted array of document-score pairs.  It's
  * up to you to filter the array to exclude scores above a certain threshold, or
  * to take the top scorer, etc.
  */
 class QueryScorer {
-  constructor() {
+  constructor(distanceThreshold = 1) {
+    this._distanceThreshold = distanceThreshold;
     this._documentsByWord = new Map();
+  }
+
+  get distanceThreshold() {
+    return this._distanceThreshold;
+  }
+
+  set distanceThreshold(value) {
+    this._distanceThreshold = value;
   }
 
   /**
@@ -69,11 +80,8 @@ class QueryScorer {
     // 1. Get its edit distance from all words in all documents.  While we're
     //    doing that, keep track of the word's minimum distance per document.
     // 2. For each document, add the minimum distance computed in the previous
-    //    step to a running sum.  This sum is the document's raw distance for
+    //    step to a running sum.  This sum is the document's distance score for
     //    the query string.
-    //
-    // Then for each document, convert its raw distance to a mean by dividing by
-    // the number of words in the query string.
 
     let searchWords = searchString
       .trim()
@@ -84,6 +92,9 @@ class QueryScorer {
       let minDistanceByDoc = new Map();
       for (let [docWord, docs] of this._documentsByWord) {
         let distance = this._levenshtein(searchWord, docWord);
+        if (distance > this.distanceThreshold) {
+          distance = Infinity;
+        }
         for (let doc of docs) {
           minDistanceByDoc.set(
             doc,
@@ -100,8 +111,7 @@ class QueryScorer {
     }
     let results = [];
     for (let [doc, sum] of sumByDoc) {
-      let mean = sum / searchWords.length;
-      results.push({ document: doc, score: mean });
+      results.push({ document: doc, score: sum });
     }
     results.sort((a, b) => a.score - b.score);
     return results;

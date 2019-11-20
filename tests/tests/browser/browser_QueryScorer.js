@@ -5,14 +5,6 @@
 
 "use strict";
 
-// The path of the add-on file relative to `getTestFilePath`.
-const ADDON_PATH = "urlbar_interventions-1.0.0.zip";
-
-// Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
-// the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
-const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_MISSING;
-// const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_PRIVILEGED;
-
 const CUTOFF_SCORE = 1;
 
 let documents = {
@@ -48,7 +40,7 @@ let tests = [
   },
   {
     query: "banana app",
-    matches: ["fruits"],
+    matches: [],
   },
   {
     query: "banana ap",
@@ -81,7 +73,7 @@ let tests = [
   },
   {
     query: "vanilla butterscot",
-    matches: ["iceCreams"],
+    matches: [],
   },
   {
     query: "vanilla buttersco",
@@ -114,7 +106,7 @@ let tests = [
   },
   {
     query: "aardvark hamst",
-    matches: ["animals"],
+    matches: [],
   },
   {
     query: "aardvark hams",
@@ -143,7 +135,7 @@ add_task(async function test() {
     }
 
     for (let { query, matches } of tests) {
-      info(`Checking query: ${query}\n`);
+      info(`Checking query: ${query}`);
       let actual = qs
         .score(query)
         .filter(result => result.score <= CUTOFF_SCORE)

@@ -16,6 +16,14 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
 });
 
+// The path of the add-on file relative to `getTestFilePath`.
+const ADDON_PATH = "urlbar_interventions-1.0.0.zip";
+
+// Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
+// the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
+const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_MISSING;
+// const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_PRIVILEGED;
+
 AddonTestUtils.initMochitest(this);
 
 /**
