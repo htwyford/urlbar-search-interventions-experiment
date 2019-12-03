@@ -35,11 +35,26 @@
         "parameters": []
       },
       {
+        "name": "openClearHistoryDialog",
+        "type": "function",
+        "async": true,
+        "description": "Shows the 'Clear Recent History' dialog unless the user is in Private Browsing Mode.",
+        "parameters": [],
+        "requireUserInput": true
+      },
+      {
         "name": "restartBrowser",
         "type": "function",
         "async": true,
         "description": "Restarts the application.",
         "requireUserInput": true,
+        "parameters": []
+      },
+      {
+        "name": "resetBrowser",
+        "type": "function",
+        "async": true,
+        "description": "Opens a confirmation dialogue asking if the user wants to reset their profile.",
         "parameters": []
       }
     ]

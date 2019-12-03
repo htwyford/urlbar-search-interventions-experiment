@@ -12,6 +12,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Preferences: "resource://gre/modules/Preferences.jsm",
   ProfileAge: "resource://gre/modules/ProfileAge.jsm",
   Services: "resource://gre/modules/Services.jsm",
+  ResetProfile: "resource://gre/modules/ResetProfile.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  Sanitizer: "resource:///modules/Sanitizer.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -137,6 +140,16 @@ this.experiments_urlbar = class extends ExtensionAPI {
             "browser.urlbar.openViewOnFocus"
           ),
 
+          openClearHistoryDialog() {
+            let window = BrowserWindowTracker.getTopWindow();
+            // The behaviour of the Clear Recent History dialog in PBM does
+            // not have the expected effect (bug 463607).
+            if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+              return;
+            }
+            Sanitizer.showUI(window);
+          },
+
           restartBrowser() {
             // Notify all windows that an application quit has been requested.
             let cancelQuit = Cc[
@@ -160,6 +173,14 @@ this.experiments_urlbar = class extends ExtensionAPI {
               );
             }
           },
+
+          resetBrowser() {
+            if (!ResetProfile.resetSupported()) {
+              return;
+            }
+            let window = BrowserWindowTracker.getTopWindow();
+            ResetProfile.openConfirmationDialog(window);
+          },
         },
       },
     };
@@ -179,7 +200,14 @@ this.experiments_urlbar = class extends ExtensionAPI {
   _getDefaultSettingsAPI(pref) {
     return {
       get: details => {
-        return { value: Preferences.get(pref) };
+        return {
+          value: Preferences.get(pref),
+
+          // Nothing actually uses this, but on debug builds there are extra
+          // checks enabled in Schema.jsm that fail if it's not present.  The
+          // value doesn't matter.
+          levelOfControl: "controllable_by_this_extension",
+        };
       },
       set: details => {
         if (!this._initialDefaultPrefs) {
