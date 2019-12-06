@@ -28,12 +28,6 @@ add_task(async function test() {
   await withStudy({ branch: BRANCHES.TREATMENT }, async () => {
     await initUpdate(params);
     await withAddon(async () => {
-      // Force a check to get the ball running.
-      let checker = Cc["@mozilla.org/updates/update-checker;1"].getService(
-        Ci.nsIUpdateChecker
-      );
-      checker.checkForUpdates({}, true);
-
       // Set up the "unsupported update" update state.
       await processUpdateSteps(preSteps);
 

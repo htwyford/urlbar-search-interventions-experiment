@@ -18,11 +18,20 @@ const TIPS = {
   CLEAR: "clear",
   REFRESH: "refresh",
 
+  // There's an update available, but the user's pref says we should ask them to
+  // download and apply it.
+  UPDATE_ASK: "update_ask",
+
+  // The user's browser is up to date, but they triggered the update
+  // intervention.  We show this special refresh intervention instead.
+  UPDATE_REFRESH: "update_refresh",
+
   // There's an update and it's been downloaded and applied.  The user needs to
   // restart to finish.
   UPDATE_RESTART: "update_restart",
 
-  // The user should download the latest version from the web.
+  // We can't update the browser or possibly even check for updates for some
+  // reason, so the user should download the latest version from the web.
   UPDATE_WEB: "update_web",
 };
 
@@ -137,12 +146,33 @@ async function onBehaviorRequested(query) {
   // Determine the tip to show, if any.  If there are multiple top-score docs,
   // prefer them in the following order.
   if (topDocIDs.has("update")) {
-    if (await browser.experiments.urlbar.isBrowserUpdateReadyToInstall()) {
-      // Prompt the user to restart.
-      currentTip = TIPS.UPDATE_RESTART;
-    } else {
-      // Ask the user to download the latest version from the web.
-      currentTip = TIPS.UPDATE_WEB;
+    // There are several update tips.  Figure out which one to show.
+    let status = await browser.experiments.urlbar.getBrowserUpdateStatus();
+    switch (status) {
+      case "downloading":
+      case "staging":
+      case "readyForRestart":
+        // Prompt the user to restart.
+        currentTip = TIPS.UPDATE_RESTART;
+        break;
+      case "downloadAndInstall":
+        // There's an update available, but the user's pref says we should ask
+        // them to download and apply it.
+        currentTip = TIPS.UPDATE_ASK;
+        break;
+      case "noUpdatesFound":
+        // We show a special refresh tip when the browser is up to date.
+        currentTip = TIPS.UPDATE_REFRESH;
+        break;
+      case "checking":
+        // The browser is checking for an update.  There's not much we can do in
+        // this case without implementing a decent self-updating progress UI, so
+        // just don't show anything.
+        return "inactive";
+      default:
+        // Give up and ask the user to download the latest version from the web.
+        currentTip = TIPS.UPDATE_WEB;
+        break;
     }
   } else if (topDocIDs.has("clear")) {
     currentTip = TIPS.CLEAR;
@@ -185,6 +215,19 @@ async function onResultsRequested(query) {
       result.payload.helpUrl =
         "https://support.mozilla.org/kb/refresh-firefox-reset-add-ons-and-settings";
       break;
+    case TIPS.UPDATE_ASK:
+      result.payload.text = "A new version of Firefox is available.";
+      result.payload.buttonText = "Install and Restart to Update";
+      result.payload.helpUrl =
+        "https://support.mozilla.org/kb/update-firefox-latest-release";
+      break;
+    case TIPS.UPDATE_REFRESH:
+      result.payload.text =
+        "Firefox is up to date. Trying to fix a problem? Restore default settings and remove old add-ons for optimal performance.";
+      result.payload.buttonText = "Refresh Firefox…";
+      result.payload.helpUrl =
+        "https://support.mozilla.org/kb/refresh-firefox-reset-add-ons-and-settings";
+      break;
     case TIPS.UPDATE_RESTART:
       result.payload.text =
         "The latest Firefox is downloaded and ready to install.";
@@ -215,7 +258,11 @@ async function onResultPicked(payload) {
       browser.experiments.urlbar.openClearHistoryDialog();
       break;
     case TIPS.REFRESH:
+    case TIPS.UPDATE_REFRESH:
       browser.experiments.urlbar.resetBrowser();
+      break;
+    case TIPS.UPDATE_ASK:
+      browser.experiments.urlbar.installBrowserUpdateAndRestart();
       break;
     case TIPS.UPDATE_RESTART:
       browser.experiments.urlbar.restartBrowser();
@@ -299,6 +346,10 @@ async function enroll() {
   for (let docID in KEYWORDS) {
     queryScorer.addDocument({ id: docID, words: KEYWORDS[docID] });
   }
+
+  // Trigger a browser update check.  (This won't actually check if updates are
+  // disabled for some reason, e.g., by policy.)
+  await browser.experiments.urlbar.checkForBrowserUpdate();
 
   sendTestMessage("enrolled");
 }
