@@ -43,18 +43,7 @@ add_task(async function test() {
         tip: TIPS.UPDATE_RESTART,
         title: "The latest Firefox is downloaded and ready to install.",
         button: "Restart to Update",
-        awaitCallback() {
-          return TestUtils.topicObserved(
-            "quit-application-requested",
-            (cancelQuit, data) => {
-              if (data == "restart") {
-                cancelQuit.QueryInterface(Ci.nsISupportsPRBool).data = true;
-                return true;
-              }
-              return false;
-            }
-          );
-        },
+        awaitCallback: awaitAppRestartRequest,
       });
     });
   });

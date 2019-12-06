@@ -66,16 +66,7 @@ add_task(async function test() {
         awaitCallback() {
           return Promise.all([
             processUpdateSteps(postSteps),
-            TestUtils.topicObserved(
-              "quit-application-requested",
-              (cancelQuit, data) => {
-                if (data == "restart") {
-                  cancelQuit.QueryInterface(Ci.nsISupportsPRBool).data = true;
-                  return true;
-                }
-                return false;
-              }
-            ),
+            awaitAppRestartRequest(),
           ]);
         },
       });

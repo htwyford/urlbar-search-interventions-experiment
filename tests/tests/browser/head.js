@@ -568,6 +568,23 @@ async function pickTip() {
 }
 
 /**
+ * Waits for the quit-application-requested notification and cancels it (so that
+ * the app isn't actually restarted).
+ */
+async function awaitAppRestartRequest() {
+  await TestUtils.topicObserved(
+    "quit-application-requested",
+    (cancelQuit, data) => {
+      if (data == "restart") {
+        cancelQuit.QueryInterface(Ci.nsISupportsPRBool).data = true;
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
+/**
  * Sets up the profile so that it can be reset.
  */
 function makeProfileResettable() {
