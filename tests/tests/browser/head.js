@@ -12,9 +12,94 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonStudies: "resource://normandy/lib/AddonStudies.jsm",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
+  ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   NormandyTestUtils: "resource://testing-common/NormandyTestUtils.jsm",
+  ResetProfile: "resource://gre/modules/ResetProfile.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
 });
+
+const { WebExtensionPolicy } = Cu.getGlobalForObject(
+  ChromeUtils.import("resource://gre/modules/Services.jsm", {})
+);
+
+// The path of the add-on file relative to `getTestFilePath`.
+const ADDON_PATH = "urlbar_interventions-1.0a5.zip";
+
+// Use SIGNEDSTATE_MISSING when testing an unsigned, in-development version of
+// the add-on and SIGNEDSTATE_PRIVILEGED when testing the production add-on.
+const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_MISSING;
+// const EXPECTED_ADDON_SIGNED_STATE = AddonManager.SIGNEDSTATE_PRIVILEGED;
+
+const BRANCHES = {
+  CONTROL: "control",
+  TREATMENT: "treatment",
+};
+
+const TIPS = {
+  NONE: "",
+  CLEAR: "clear",
+  REFRESH: "refresh",
+  UPDATE_RESTART: "update_restart",
+  UPDATE_ASK: "update_ask",
+  UPDATE_REFRESH: "update_refresh",
+  UPDATE_WEB: "update_web",
+};
+
+const SEARCH_STRINGS = {
+  CLEAR: "firefox history",
+  REFRESH: "firefox slow",
+  UPDATE: "firefox update",
+};
+
+const TELEMETRY_ROOT = "urlbarInterventionsExperiment";
+const TELEMETRY_SHOWN_PART = "tipShownCount";
+const TELEMETRY_SHOWN = `${TELEMETRY_ROOT}.${TELEMETRY_SHOWN_PART}`;
+const TELEMETRY_PICKED_PART = "tipPickedCount";
+const TELEMETRY_PICKED = `${TELEMETRY_ROOT}.${TELEMETRY_PICKED_PART}`;
+
+const SURVEY_URL = "https://qsurvey.mozilla.com/s3/Search-Interventions";
+
+const MAX_SURVEY_OPEN_COUNT = 3;
+
+const FORCE_SURVEY_ENABLE = 1;
+const FORCE_SURVEY_DISABLE = 2;
+
+// For our app-update tests, we use helpers from the About window app-update
+// tests.
+//
+// These globals are all in toolkit/mozapps/update/tests/browser/head.js, but we
+// declare them individually instead of using `import-globals-from` because `npx
+// eslint` from the repo directory wouldn't be able to find them.
+/*
+  global
+  CONTINUE_CHECK,
+  CONTINUE_DOWNLOAD,
+  CONTINUE_STAGING,
+  continueFileHandler,
+  gAUS,
+  gDetailsURL,
+  gEnv,
+  gUpdateManager,
+  getPatchOfType,
+  getVersionParams,
+  logTestInfo,
+  PREF_APP_UPDATE_BITS_ENABLED,
+  PREF_APP_UPDATE_DISABLEDFORTESTING,
+  PREF_APP_UPDATE_STAGING_ENABLED,
+  PREF_APP_UPDATE_URL_MANUAL,
+  setUpdateURL,
+  setupTestUpdater,
+  STATE_APPLIED,
+  STATE_DOWNLOADING,
+  STATE_PENDING,
+  URL_HTTP_UPDATE_SJS
+*/
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/toolkit/mozapps/update/tests/browser/head.js",
+  this
+);
 
 AddonTestUtils.initMochitest(this);
 
@@ -188,6 +273,12 @@ async function withStudy(studyPartial, callback) {
  *   of AddonWrapper (defined in XPIDatabase.jsm).
  */
 async function withAddon(callback) {
+  let addon = await installAddon();
+  await callback(addon);
+  await uninstallAddon(addon);
+}
+
+async function installAddon() {
   // If the add-on isn't signed, then as a convenience during development,
   // install it as a temporary add-on so that it can use privileged APIs.  If it
   // is signed, install it normally.
@@ -206,8 +297,10 @@ async function withAddon(callback) {
     "The add-on should have the expected signed state"
   );
 
-  await callback(addon);
+  return addon;
+}
 
+async function uninstallAddon(addon) {
   // If `withStudy` was called and there's an active study, Normandy will
   // automatically end the study when it sees that the add-on has been
   // uninstalled.  That's fine, but that automatic unenrollment will race the
@@ -223,4 +316,389 @@ async function withAddon(callback) {
       : Promise.resolve(),
     addon.uninstall(),
   ]);
+}
+
+/**
+ * Checks a tip on the treatment branch: Starts a search that should trigger a
+ * tip, picks the tip, waits for the tip's action to happen, and checks scalar
+ * telemetry (the telemetry recorded by the extension).
+ *
+ * @param {string} searchString
+ *   The search string.
+ * @param {TIPS.*} tip
+ *   The expected tip type.
+ * @param {string} title
+ *   The expected tip title.
+ * @param {string} button
+ *   The expected button title.
+ * @param {function} awaitCallback
+ *   A function that checks the tip's action.  Should return a promise (or be
+ *   async).
+ * @return {*}
+ *   The value returned from `awaitCallback`.
+ */
+async function doTreatmentTest({
+  searchString,
+  tip,
+  title,
+  button,
+  awaitCallback,
+} = {}) {
+  Services.telemetry.clearScalars();
+  await forceSurvey(FORCE_SURVEY_DISABLE);
+
+  // Do a search that triggers the tip.
+  let [result, element] = await awaitTip(searchString);
+  Assert.strictEqual(result.payload.type, tip);
+  Assert.equal(element._elements.get("title").textContent, title);
+  Assert.equal(element._elements.get("tipButton").textContent, button);
+  Assert.ok(BrowserTestUtils.is_visible(element._elements.get("helpButton")));
+
+  // Pick the tip, which should open the refresh dialog.  Click its cancel
+  // button.
+  let values = await Promise.all([awaitCallback(), pickTip()]);
+  Assert.ok(true, "Refresh dialog opened");
+
+  // Shown- and picked-count telemetry should be updated.
+  let scalars = TelemetryTestUtils.getProcessScalars("dynamic", true, true);
+  for (let name of [TELEMETRY_SHOWN, TELEMETRY_PICKED]) {
+    TelemetryTestUtils.assertKeyedScalar(scalars, name, tip, 1);
+  }
+
+  return values[0] || null;
+}
+
+/**
+ * Checks for the absence of a tip on the control branch: Starts a search that
+ * should trigger a tip on the treatment branch, makes sure no tip appears, and
+ * checks scalar telemetry (the telemetry recorded by the extension).
+ *
+ * @param {string} searchString
+ *   The search string.
+ * @param {TIPS.*} tip
+ *   The expected tip type (which should not appear).
+ */
+async function doControlTest({ searchString, tip } = {}) {
+  Services.telemetry.clearScalars();
+  await forceSurvey(FORCE_SURVEY_DISABLE);
+
+  // Do a search that would trigger the tip.
+  await awaitNoTip(searchString);
+
+  // Blur the urlbar so that the engagement is ended and telemetry is recorded.
+  await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
+
+  // Shown-count telemetry should be updated, but not picked count.
+  await TestUtils.waitForCondition(
+    () =>
+      TELEMETRY_SHOWN in TelemetryTestUtils.getProcessScalars("dynamic", true),
+    "Wait for telemetry to be recorded"
+  );
+  let scalars = TelemetryTestUtils.getProcessScalars("dynamic", true, true);
+  TelemetryTestUtils.assertKeyedScalar(scalars, TELEMETRY_SHOWN, tip, 1);
+  Assert.ok(!(TELEMETRY_PICKED in scalars));
+}
+
+/**
+ * Initializes a mock app update.  This function and the other update-related
+ * functions are adapted from `runAboutDialogUpdateTest` here:
+ * https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/head.js
+ */
+async function initUpdate(params) {
+  gEnv.set("MOZ_TEST_SLOW_SKIP_UPDATE_STAGE", "1");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [PREF_APP_UPDATE_DISABLEDFORTESTING, false],
+      [PREF_APP_UPDATE_URL_MANUAL, gDetailsURL],
+    ],
+  });
+
+  await setupTestUpdater();
+
+  let queryString = params.queryString ? params.queryString : "";
+  let updateURL =
+    URL_HTTP_UPDATE_SJS +
+    "?detailsURL=" +
+    gDetailsURL +
+    queryString +
+    getVersionParams();
+  if (params.backgroundUpdate) {
+    setUpdateURL(updateURL);
+    gAUS.checkForBackgroundUpdates();
+    if (params.continueFile) {
+      await continueFileHandler(params.continueFile);
+    }
+    if (params.waitForUpdateState) {
+      await TestUtils.waitForCondition(
+        () =>
+          gUpdateManager.activeUpdate &&
+          gUpdateManager.activeUpdate.state == params.waitForUpdateState,
+        "Waiting for update state: " + params.waitForUpdateState,
+        undefined,
+        200
+      ).catch(e => {
+        // Instead of throwing let the check below fail the test so the panel
+        // ID and the expected panel ID is printed in the log.
+        logTestInfo(e);
+      });
+      // Display the UI after the update state equals the expected value.
+      Assert.equal(
+        gUpdateManager.activeUpdate.state,
+        params.waitForUpdateState,
+        "The update state value should equal " + params.waitForUpdateState
+      );
+    }
+  } else {
+    updateURL += "&slowUpdateCheck=1&useSlowDownloadMar=1";
+    setUpdateURL(updateURL);
+  }
+}
+
+/**
+ * Performs steps in a mock update.  This function and the other update-related
+ * functions are adapted from `runAboutDialogUpdateTest` here:
+ * https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/head.js
+ */
+async function processUpdateSteps(steps) {
+  for (let step of steps) {
+    await processUpdateStep(step);
+  }
+}
+
+/**
+ * Performs a step in a mock update.  This function and the other update-related
+ * functions are adapted from `runAboutDialogUpdateTest` here:
+ * https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/head.js
+ */
+async function processUpdateStep(step) {
+  if (typeof step == "function") {
+    step();
+    return;
+  }
+
+  const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
+  if (checkActiveUpdate) {
+    await TestUtils.waitForCondition(
+      () => gUpdateManager.activeUpdate,
+      "Waiting for active update"
+    );
+    Assert.ok(
+      !!gUpdateManager.activeUpdate,
+      "There should be an active update"
+    );
+    Assert.equal(
+      gUpdateManager.activeUpdate.state,
+      checkActiveUpdate.state,
+      "The active update state should equal " + checkActiveUpdate.state
+    );
+  } else {
+    Assert.ok(
+      !gUpdateManager.activeUpdate,
+      "There should not be an active update"
+    );
+  }
+
+  if (panelId == "downloading") {
+    for (let i = 0; i < downloadInfo.length; ++i) {
+      let data = downloadInfo[i];
+      // The About Dialog tests always specify a continue file.
+      await continueFileHandler(continueFile);
+      let patch = getPatchOfType(data.patchType);
+      // The update is removed early when the last download fails so check
+      // that there is a patch before proceeding.
+      let isLastPatch = i == downloadInfo.length - 1;
+      if (!isLastPatch || patch) {
+        let resultName = data.bitsResult ? "bitsResult" : "internalResult";
+        patch.QueryInterface(Ci.nsIWritablePropertyBag);
+        await TestUtils.waitForCondition(
+          () => patch.getProperty(resultName) == data[resultName],
+          "Waiting for expected patch property " +
+            resultName +
+            " value: " +
+            data[resultName],
+          undefined,
+          200
+        ).catch(e => {
+          // Instead of throwing let the check below fail the test so the
+          // property value and the expected property value is printed in
+          // the log.
+          logTestInfo(e);
+        });
+        Assert.equal(
+          patch.getProperty(resultName),
+          data[resultName],
+          "The patch property " +
+            resultName +
+            " value should equal " +
+            data[resultName]
+        );
+      }
+    }
+  } else if (continueFile) {
+    await continueFileHandler(continueFile);
+  }
+}
+
+/**
+ * Starts a search and asserts that the second result is a tip.
+ *
+ * @param {string} searchString
+ *   The search string.
+ * @return {[result, element]}
+ *   The result and its element in the DOM.
+ */
+async function awaitTip(searchString, win = window) {
+  let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window: win,
+    value: searchString,
+    waitForFocus,
+    fireInputEvent: true,
+  });
+  Assert.ok(context.results.length >= 2);
+  let result = context.results[1];
+  Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.TIP);
+  let element = await UrlbarTestUtils.waitForAutocompleteResultAt(win, 1);
+  return [result, element];
+}
+
+/**
+ * Starts a search and asserts that there are no tips.
+ *
+ * @param {string} searchString
+ *   The search string.
+ */
+async function awaitNoTip(searchString, win = window) {
+  let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window: win,
+    value: searchString,
+    waitForFocus,
+    fireInputEvent: true,
+  });
+  for (let result of context.results) {
+    Assert.notEqual(result.type, UrlbarUtils.RESULT_TYPE.TIP);
+  }
+}
+
+/**
+ * Picks the current tip's button.  The view should be open and the second
+ * result should be a tip.
+ */
+async function pickTip() {
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
+  let button = result.element.row._elements.get("tipButton");
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeMouseAtCenter(button, {});
+  });
+}
+
+/**
+ * Waits for the quit-application-requested notification and cancels it (so that
+ * the app isn't actually restarted).
+ */
+async function awaitAppRestartRequest() {
+  await TestUtils.topicObserved(
+    "quit-application-requested",
+    (cancelQuit, data) => {
+      if (data == "restart") {
+        cancelQuit.QueryInterface(Ci.nsISupportsPRBool).data = true;
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
+/**
+ * Sets up the profile so that it can be reset.
+ */
+function makeProfileResettable() {
+  // Make reset possible.
+  let profileService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
+    Ci.nsIToolkitProfileService
+  );
+  let currentProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
+  let profileName = "mochitest-test-profile-temp-" + Date.now();
+  let tempProfile = profileService.createProfile(
+    currentProfileDir,
+    profileName
+  );
+  Assert.ok(
+    ResetProfile.resetSupported(),
+    "Should be able to reset from mochitest's temporary profile once it's in the profile manager."
+  );
+
+  registerCleanupFunction(() => {
+    tempProfile.remove(false);
+    Assert.ok(
+      !ResetProfile.resetSupported(),
+      "Shouldn't be able to reset from mochitest's temporary profile once removed from the profile manager."
+    );
+  });
+}
+
+/**
+ * Gets a connection to the extension's "local" storage, which is an IndexedDB
+ * database.
+ *
+ * @return {object}
+ *   The IndexedDB connection.
+ */
+async function getExtensionStorage() {
+  let policy = WebExtensionPolicy.getByID(gAddonID);
+  let storagePrincipal = ExtensionStorageIDB.getStoragePrincipal(
+    policy.extension
+  );
+  return ExtensionStorageIDB.open(storagePrincipal);
+}
+
+/**
+ * Forces the survey to open or not open (subject to the opened-count logic).
+ * Also sets a dummy survey URL.
+ *
+ * @param {number} value
+ *   FORCE_SURVEY_ENABLE or FORCE_SURVEY_DISABLE.
+ */
+async function forceSurvey(value) {
+  let conn = await getExtensionStorage();
+  let storage = { surveyURL: "http://example.com/" };
+  storage.forceSurvey = value == FORCE_SURVEY_ENABLE;
+  if (value == FORCE_SURVEY_DISABLE) {
+    // Need to set this to disable.
+    storage.surveyOpenedCount = MAX_SURVEY_OPEN_COUNT;
+  }
+  await conn.set(storage);
+}
+
+/**
+ * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
+ * dialog URIs instead of only one.
+ */
+async function promiseAlertDialogOpen(buttonAction, uris, func) {
+  let win = await BrowserTestUtils.domWindowOpened(null, async win => {
+    // The test listens for the "load" event which guarantees that the alert
+    // class has already been added (it is added when "DOMContentLoaded" is
+    // fired).
+    await BrowserTestUtils.waitForEvent(win, "load");
+
+    return uris.includes(win.document.documentURI);
+  });
+
+  if (func) {
+    await func(win);
+    return win;
+  }
+
+  let dialog = win.document.querySelector("dialog");
+  dialog.getButton(buttonAction).click();
+
+  return win;
+}
+
+/**
+ * Copied from BrowserTestUtils.jsm, but lets you listen for any one of multiple
+ * dialog URIs instead of only one.
+ */
+async function promiseAlertDialog(buttonAction, uris, func) {
+  let win = await promiseAlertDialogOpen(buttonAction, uris, func);
+  return BrowserTestUtils.windowClosed(win);
 }

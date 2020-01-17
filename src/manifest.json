@@ -1,22 +1,25 @@
 {
   "manifest_version": 2,
-  "name": "Urlbar Search Interventions Experiment",
-  "version": "1.0.0",
+  "name": "Urlbar Interventions",
+  "version": "1.0a5",
   "description": "Shows relevant tips in the urlbar view when you type certain search terms.",
   "applications": {
     "gecko": {
-      "id": "urlbar-search-interventions-experiment@shield.mozilla.org",
-      "strict_min_version": "70"
+      "id": "urlbar-interventions@shield.mozilla.org",
+      "strict_min_version": "72.0a1"
     }
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "urlbar-search-interventions-experiment@shield.mozilla.org",
-      "strict_min_version": "70"
+      "id": "urlbar-interventions@shield.mozilla.org",
+      "strict_min_version": "72.0a1"
     }
   },
   "permissions": [
+    "https://qsurvey.mozilla.com/s3/Search-Interventions",
     "normandyAddonStudy",
+    "storage",
+    "telemetry",
     "urlbar"
   ],
   "background": {
@@ -26,5 +29,15 @@
     ]
   },
   "incognito": "spanning",
-  "hidden": true
+  "hidden": true,
+  "experiment_apis": {
+    "experiments_urlbar": {
+      "schema": "experiments/urlbar/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["experiments", "urlbar"]],
+        "script": "experiments/urlbar/api.js"
+      }
+    }
+  }
 }
